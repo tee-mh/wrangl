@@ -13,7 +13,7 @@ const GRAVEYARDS = [
     // Add more as needed, or fetch from a public dataset
 ];
 
-const WORKER_BASE = 'https://rightmove-scrapper.tmhundy.workers.dev';
+const WORKER_BASE = 'https://price-tracker.tmhundy.workers.dev';
 const SOURCES = [
     {
         name: 'Rightmove',
@@ -26,6 +26,26 @@ const SOURCES = [
     {
         name: 'OnTheMarket',
         url: WORKER_BASE + '?target=https://www.onthemarket.com/for-sale/property/lincolnshire/?min-bedrooms=3&max-price=230000&property-type=detached,semi-detached'
+    },
+    {
+        name: 'Gleeson',
+        url: WORKER_BASE + '?target=https://gleesonhomes.co.uk/developments/'
+    },
+    {
+        name: 'Keepmoat',
+        url: WORKER_BASE + '?target=https://www.keepmoat.com/new-homes/'
+    },
+    {
+        name: 'Persimmon',
+        url: WORKER_BASE + '?target=https://www.persimmonhomes.com/new-homes/'
+    },
+    {
+        name: 'Allison',
+        url: WORKER_BASE + '?target=https://allison-homes.co.uk/developments/'
+    },
+    {
+        name: 'Bellway',
+        url: WORKER_BASE + '?target=https://www.bellway.co.uk/new-homes/'
     }
 ];
 let selectedSource = 'All'; // or 'Rightmove', 'Zoopla', 'OnTheMarket'
@@ -57,51 +77,157 @@ async function loadProperties() {
     let allResults = [];
     let errors = [];
     let sourcesToFetch = selectedSource === 'All' ? SOURCES : SOURCES.filter(s => s.name === selectedSource);
+    
+    // Show loading message
+    const propertyFeed = document.getElementById('propertyFeed');
+    propertyFeed.innerHTML = '<div class="alert alert-info">Loading properties, please wait...</div>';
+    
     for (const src of sourcesToFetch) {
         try {
-            const resp = await fetch(src.url);
-            const data = await resp.json();
-            if (Array.isArray(data)) {
-                for (const item of data) {
-                    item.source = src.name;
-                }
-                allResults = allResults.concat(data);
+            console.log(`Fetching from ${src.name}...`);
+            const response = await fetch(src.url);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
-        } catch (e) {
-            errors.push(src.name);
-            console.error('Failed to load from', src.name, e);
+            
+            const data = await response.json();
+            
+            if (!Array.isArray(data)) {
+                throw new Error('Invalid data format received');
+            }
+            
+            console.log(`Received ${data.length} properties from ${src.name}`);
+            
+            // Add source information to each property
+            const processedData = data.map(item => ({
+                ...item,
+                source: src.name
+            }));
+            
+            allResults = [...allResults, ...processedData];
+            
+        } catch (error) {
+            console.error(`Failed to load from ${src.name}:`, error);
+            errors.push({
+                source: src.name,
+                error: error.message
+            });
+            
+            // Show error in UI
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'alert alert-warning';
+            errorDiv.textContent = `Failed to load properties from ${src.name}. ${error.message}`;
+            propertyFeed.appendChild(errorDiv);
         }
     }
-    // Normalize and geocode
-    properties = await Promise.all(allResults.map(async item => {
-        let location = null;
-        if (item.address) {
-            location = await geocodeAddress(item.address);
+    // Normalize and geocode properties with better error handling
+    try {
+        const normalizedProperties = [];
+        
+        // Process properties in batches to avoid overwhelming the geocoding service
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < allResults.length; i += BATCH_SIZE) {
+            const batch = allResults.slice(i, i + BATCH_SIZE);
+            const batchResults = await Promise.all(batch.map(async (item, index) => {
+                try {
+                    let location = null;
+                    if (item.address) {
+                        console.log(`Geocoding address for: ${item.title || 'Untitled Property'}`);
+                        location = await geocodeAddress(item.address);
+                    }
+                    
+                    return {
+                        id: item.url || `property-${i + index}-${Date.now()}`,
+                        developer: item.source || 'Unknown',
+                        title: item.title || 'Untitled Property',
+                        price: item.price ? parseInt(item.price.toString().replace(/[^0-9]/g, ''), 10) : null,
+                        address: item.address || 'Address not available',
+                        location,
+                        bedrooms: parseInt(item.bedrooms, 10) || 3,
+                        bathrooms: parseInt(item.bathrooms, 10) || 2,
+                        detached: item.type ? item.type.toLowerCase() === 'detached' : false,
+                        semiDetached: item.type ? item.type.toLowerCase() === 'semi-detached' : false,
+                        garage: item.title ? /garage|parking|driveway/i.test(item.title) : false,
+                        listingDate: item.listingDate || new Date().toISOString().split('T')[0],
+                        lastPriceChange: item.lastPriceChange || '',
+                        url: item.url || '#',
+                        image: item.image || 'https://via.placeholder.com/300x200?text=No+Image',
+                        source: item.source || 'Unknown',
+                        description: item.description || ''
+                    };
+                } catch (error) {
+                    console.error(`Error processing property ${i + index}:`, error);
+                    return null; // Skip this property if there's an error
+                }
+            }));
+            
+            // Filter out any null values from failed property processing
+            const validProperties = batchResults.filter(p => p !== null);
+            normalizedProperties.push(...validProperties);
+            
+            // Update UI with progress
+            const progress = Math.min(i + BATCH_SIZE, allResults.length);
+            propertyFeed.innerHTML = `
+                <div class="alert alert-info">
+                    Loading properties... ${progress} of ${allResults.length} processed
+                </div>
+            `;
         }
-        return {
-            id: item.url,
-            developer: item.source || 'Unknown',
-            title: item.title,
-            price: item.price ? parseInt(item.price, 10) : null,
-            address: item.address || '',
-            location,
-            bedrooms: item.bedrooms || 3,
-            bathrooms: item.bathrooms || 2,
-            detached: item.type === 'detached',
-            semiDetached: item.type === 'semi-detached',
-            garage: /garage/i.test(item.title || ''),
-            listingDate: '',
-            lastPriceChange: '',
-            url: item.url,
-            image: item.image || null,
-            source: item.source || 'Unknown'
-        };
-    }));
-    window.isLoadingProperties = false;
-    renderFeed();
-    renderMap();
-    if (errors.length) {
-        alert('Some sources failed to load: ' + errors.join(', '));
+        
+        properties = normalizedProperties;
+        
+        // Save to localStorage for offline use
+        try {
+            localStorage.setItem('cachedProperties', JSON.stringify(properties));
+            localStorage.setItem('lastUpdated', new Date().toISOString());
+        } catch (storageError) {
+            console.warn('Could not save to localStorage:', storageError);
+        }
+        
+    } catch (error) {
+        console.error('Error processing properties:', error);
+        propertyFeed.innerHTML = `
+            <div class="alert alert-danger">
+                Error processing property data. ${error.message}
+            </div>
+        `;
+    } finally {
+        window.isLoadingProperties = false;
+        renderFeed();
+        renderMap();
+        
+        // Show any errors that occurred during loading
+        if (errors.length > 0) {
+            const errorMessages = errors.map(e => `${e.source}: ${e.error}`).join('\n');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'alert alert-warning mt-3';
+            errorDiv.innerHTML = `
+                <strong>Some sources failed to load:</strong>
+                <pre class="mt-2 mb-0">${errorMessages}</pre>
+                <p class="mb-0 mt-2">Showing cached results if available.</p>
+            `;
+            propertyFeed.insertBefore(errorDiv, propertyFeed.firstChild);
+        }
+        
+        // If no properties were loaded, try to load from cache
+        if (properties.length === 0) {
+            try {
+                const cached = localStorage.getItem('cachedProperties');
+                if (cached) {
+                    properties = JSON.parse(cached);
+                    const lastUpdated = localStorage.getItem('lastUpdated');
+                    const cacheNotice = document.createElement('div');
+                    cacheNotice.className = 'alert alert-info';
+                    cacheNotice.textContent = `Showing cached data from ${new Date(lastUpdated).toLocaleString()}`;
+                    propertyFeed.insertBefore(cacheNotice, propertyFeed.firstChild);
+                    renderFeed();
+                    renderMap();
+                }
+            } catch (cacheError) {
+                console.error('Error loading cached properties:', cacheError);
+            }
+        }
     }
 }
 
@@ -168,64 +294,15 @@ async function loadProperties() {
         properties = all;
         localStorage.setItem('properties', JSON.stringify(properties));
     } else {
-        // fallback: try localStorage, else mock data
+        // fallback: try localStorage
         let cached = localStorage.getItem('properties');
         if (cached) {
             properties = JSON.parse(cached);
         } else {
-            properties = [
-                {
-                    id: "persimmon-001",
-                    developer: "Persimmon",
-                    title: "3 Bed Detached with Garage",
-                    price: 225000,
-                    address: "123 Main St, Lincoln, LN1 1AA",
-                    location: { lat: 53.234, lng: -0.538 },
-                    bedrooms: 3,
-                    bathrooms: 2,
-                    detached: true,
-                    semiDetached: false,
-                    garage: true,
-                    listingDate: "2025-08-01",
-                    lastPriceChange: "2025-08-01",
-                    url: "https://www.persimmonhomes.com/lincolnshire/1234"
-                },
-                {
-                    id: "gleeson-002",
-                    developer: "Gleeson",
-                    title: "4 Bed Detached with Garage",
-                    price: 230000,
-                    address: "456 Oak Ave, Spalding, PE11 2BB",
-                    location: { lat: 52.793, lng: -0.151 },
-                    bedrooms: 4,
-                    bathrooms: 2,
-                    detached: true,
-                    semiDetached: false,
-                    garage: true,
-                    listingDate: "2025-07-25",
-                    lastPriceChange: "2025-07-28",
-                    url: "https://gleesonhomes.co.uk/developments/lincolnshire/456"
-                },
-                {
-                    id: "allison-003",
-                    developer: "Allison",
-                    title: "3 Bed Semi-Detached with Garage",
-                    price: 210000,
-                    address: "789 Willow Rd, Boston, PE21 7AA",
-                    location: { lat: 52.978, lng: -0.022 },
-                    bedrooms: 3,
-                    bathrooms: 2,
-                    detached: false,
-                    semiDetached: true,
-                    garage: true,
-                    listingDate: "2025-07-15",
-                    lastPriceChange: "2025-07-20",
-                    url: "https://allison-homes.co.uk/developments/lincolnshire/789"
-                }
-            ];
+            properties = [];
+        }
         }
     }
-}
 
 
 // Helper: Calculate distance in miles between two lat/lng points
@@ -400,25 +477,41 @@ function renderSavedSearches() {
 }
 
 // Map View (simple placeholder, can use Leaflet/OpenStreetMap for real map)
+let currentMap = null;
+
 function renderMap() {
     let mapDiv = document.getElementById('map');
-    mapDiv.innerHTML = "";
+    
+    // Remove existing map if it exists
+    if (currentMap) {
+        currentMap.remove();
+        currentMap = null;
+    }
+    
     // Only use properties with geolocation
     let geoProps = properties.filter(p => p.location && p.location.lat && p.location.lng);
+    console.log('Properties with location:', geoProps.length, geoProps);
+    
     if (!geoProps.length) {
-        mapDiv.innerHTML = '<p>No properties with map location available.</p>';
+        mapDiv.innerHTML = '<div class="alert alert-info">No properties with map location available. Properties need geocoding.</div>';
         return;
     }
-    // Create map
-    let map = L.map('map').setView([53.233, -0.539], 9); // Lincolnshire center
+    
+    // Clear any existing content
+    mapDiv.innerHTML = '';
+    
+    // Create new map
+    currentMap = L.map('map').setView([53.233, -0.539], 9); // Lincolnshire center
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    }).addTo(currentMap);
+    
     // Add property markers
     geoProps.forEach(p => {
-        let marker = L.marker([p.location.lat, p.location.lng]).addTo(map);
-        marker.bindPopup(`<b>${p.title}</b><br>£${p.price ? p.price.toLocaleString() : 'N/A'}<br>${p.address}`);
+        let marker = L.marker([p.location.lat, p.location.lng]).addTo(currentMap);
+        marker.bindPopup(`<b>${p.title}</b><br>£${p.price ? p.price.toLocaleString() : 'N/A'}<br>${p.address}<br><span class="badge bg-secondary">${p.source}</span>`);
     });
+    
     // Add graveyard exclusion zones
     GRAVEYARDS.forEach(g => {
         if (g.location && g.location.lat && g.location.lng) {
@@ -427,9 +520,11 @@ function renderMap() {
                 fillColor: '#f03',
                 fillOpacity: 0.2,
                 radius: 0.5 * 1609.34 // 0.5 miles in meters
-            }).addTo(map).bindPopup(`${g.name} (exclusion zone)`);
+            }).addTo(currentMap).bindPopup(`${g.name} (exclusion zone)`);
         }
     });
+    
+    console.log('Map rendered with', geoProps.length, 'properties');
 }
 
 // Push Notifications (browser)

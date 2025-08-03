@@ -1,9 +1,22 @@
-name = "price-tracker"
-type = "javascript"
-account_id = "cab49d8e81aa534e8d2b9ba3e567bb4b"
-workers_dev = true
+name = "lincolnshire-property-tracker"
 main = "worker-advanced.js"
 compatibility_date = "2025-08-03"
+compatibility_flags = ["nodejs_compat"]
+
+[build]
+command = "npm run build"
+
+# Enable development preview
+[dev]
+ip = "localhost"
+port = 8787
+local_protocol = "http"
+
+# Enable Durable Objects if needed later
+# [durable_objects]
+# bindings = [
+#   { name = "PROPERTIES", class_name = "Properties" }
+# ]
 
 [env.production]
 # Uncomment and set your production settings here

@@ -3,61 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lincolnshire New-Build Tracker</title>
+    <title>Tafa's Property Tracker</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        :root {
-            --main-green: #3ca374;
-            --main-gold: #ffd700;
-            --main-purple: #7c3aed;
-        }
         body {
-            background: #f7f7fa;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f8f9fa;
         }
-        header, footer {
-            background: var(--main-purple);
-            color: #fff;
+        header {
+            background: #6f42c1;
+            color: white;
+            padding: 1rem;
+            text-align: center;
         }
-        .btn-main {
-            background: var(--main-green);
-            color: #fff;
-            border: none;
-        }
-        .btn-main:hover {
-            background: var(--main-gold);
-            color: var(--main-purple);
-        }
-        .form-check-input:checked {
-            background-color: var(--main-green);
-            border-color: var(--main-green);
+        .container {
+            padding: 1rem;
+            max-width: 1200px;
+            margin: 0 auto;
         }
         .property-card {
-            border-left: 6px solid var(--main-gold);
-            background: #fff;
+            background: white;
+            border-radius: 4px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
-        .favorite-btn.active {
-            background: var(--main-gold);
-            color: var(--main-purple);
+        #map { 
+            height: 400px; 
+            width: 100%;
+            border: 1px solid #ddd;
+            margin-top: 1rem;
         }
-        .favorite-btn {
-            background: var(--main-green);
-            color: #fff;
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
         }
-        .favorite-btn:hover {
-            background: var(--main-gold);
-            color: var(--main-purple);
+        .btn-primary {
+            background: #28a745;
+            color: white;
         }
-        #map { border: 3px solid var(--main-purple); }
+        .form-control {
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-weight: bold;
+        }
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            margin: 0 -0.5rem;
+        }
+        .col {
+            flex: 1;
+            padding: 0 0.5rem;
+            margin-bottom: 1rem;
+        }
     </style>
 </head>
 <body>
     <header>
-        <h1>Lincolnshire New-Build Tracker</h1>
-        <nav>
-            <button id="listViewBtn">List View</button>
-            <button id="mapViewBtn">Map View</button>
+        <h1>Tafa's New-Build Tracker</h1>
+        <nav class="d-flex gap-2 justify-content-center py-2">
+            <button id="listViewBtn" class="btn btn-primary"><i class="fas fa-list me-1"></i> List View</button>
+            <button id="mapViewBtn" class="btn btn-primary"><i class="fas fa-map-marked-alt me-1"></i> Map View</button>
         </nav>
     </header>
     <div class="container pt-3 pb-1">
@@ -69,6 +90,11 @@
             <option value="Rightmove">Rightmove</option>
             <option value="Zoopla">Zoopla</option>
             <option value="OnTheMarket">OnTheMarket</option>
+            <option value="Gleeson">Gleeson</option>
+            <option value="Keepmoat">Keepmoat</option>
+            <option value="Persimmon">Persimmon</option>
+            <option value="Allison">Allison</option>
+            <option value="Bellway">Bellway</option>
           </select>
         </div>
       </div>
@@ -100,10 +126,10 @@
         <div class="col-6 col-md-3">
           <label class="form-label">Price</label>
           <div class="input-group">
-            <span class="input-group-text">£</span>
-            <input class="form-control" type="number" id="minPriceFilter" min="180000" max="230000" value="180000" style="width: 6em;">
-            <span class="input-group-text">- £</span>
-            <input class="form-control" type="number" id="maxPriceFilter" min="180000" max="230000" value="230000" style="width: 6em;">
+            <span class="input-group-text">Min £</span>
+            <input class="form-control" type="number" id="minPriceFilter" min="180000" max="230000" value="180000" style="width: 4em;">
+            <span class="input-group-text">Max £</span>
+            <input class="form-control" type="number" id="maxPriceFilter" min="180000" max="230000" value="230000" style="width: 4em;">
           </div>
         </div>
         <div class="col-6 col-md-2">
@@ -114,15 +140,25 @@
           </div>
         </div>
         <div class="col-12 col-md-3 d-flex gap-2">
-          <button type="button" id="updateSearchBtn" class="btn btn-main flex-grow-1">Update Filters & Search</button>
-          <button type="button" id="saveSearchBtn" class="btn btn-outline-warning flex-grow-1">Save Search</button>
+          <button type="button" id="updateSearchBtn" class="btn btn-primary flex-grow-1">
+            <i class="fas fa-sync-alt me-1"></i> Update Filters & Search
+          </button>
+          <button type="button" id="saveSearchBtn" class="btn btn-outline-warning flex-grow-1">
+            <i class="far fa-save me-1"></i> Save Search
+          </button>
         </div>
       </form>
     </section>
     <section id="propertyFeed"></section>
-    <section id="savedSearches">
+    <section id="savedSearches" class="container">
         <h2>Saved Searches</h2>
-        <ul id="savedSearchList"></ul>
+        <div class="row">
+            <div class="col-12">
+                <div id="savedSearchList" class="row g-3">
+                    <!-- Saved searches will be added here dynamically -->
+                </div>
+            </div>
+        </div>
     </section>
     <section id="favorites">
         <h2>Watchlist</h2>
@@ -130,7 +166,7 @@
     </section>
     <section id="map" style="display:none; height: 400px;"></section>
     <footer>
-        <small>&copy; 2025 Lincolnshire New-Build Tracker</small>
+        <small>&copy; 2025 Tafa's New-Build Tracker</small>
     </footer>
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="app.js"></script>
