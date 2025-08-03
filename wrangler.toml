@@ -2,7 +2,7 @@ name = "price-tracker"
 type = "javascript"
 account_id = "cab49d8e81aa534e8d2b9ba3e567bb4b"
 workers_dev = true
-main = "worker-advanced.js"
+main = "app.js"
 compatibility_date = "2025-08-03"
 
 [env.production]
